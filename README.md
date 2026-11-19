@@ -18,7 +18,7 @@
 
 ### 在 Yab 中安装或更新
 
-1. 登录 GitHub，打开 [Build Yab extension](https://github.com/zephyr-roc/BewlyCat/actions/workflows/build-yab.yml)，选择最近一次成功运行。在 **Artifacts** 下载 `BewlyCat-Yab-*.zip`。如果定时检查复用了已有产物，运行摘要里会有下载链接。
+1. 下载最新版 [BewlyCat-Yab.zip](https://github.com/zephyr-roc/BewlyCat/releases/latest/download/BewlyCat-Yab.zip)。[Releases](https://github.com/zephyr-roc/BewlyCat/releases) 保留历史版本，每个版本都列出了构建时使用的两个上游提交。
 2. 解压 ZIP。在 Yab 中按 **⌘E → Load Unpacked…**，选择直接包含 `manifest.json` 的目录。
 3. 用 WebKit 打开 [B 站首页](https://www.bilibili.com/)，按 **⌘R** 刷新。更新时，将新包解压到原来的扩展目录，再到 **Settings → Extensions → BewlyCat** 点 **Reload**，然后刷新 B 站标签页。
 
@@ -26,7 +26,7 @@
 
 工作流每 6 小时检查一次 `keleus/BewlyCat@main` 和 `shiinayane/BewlyCat-Safari@safari`。任一上游有新提交，就会在下一次检查时重新打包。如果相同的 fork 和上游提交已有可下载的 ZIP，定时任务会复用它。向本仓库的 `main`、`safari`、`safari-integration` 分支或 `v*` 标签推送时，也会构建两个上游的当前版本。
 
-要试用或复现特定组合，在工作流页面点 **Run workflow**，用 `upstream_ref` 指定 BewlyCat 版本，用 `safari_ref` 指定 Safari 适配版本。两者都接受分支、标签或提交 SHA。运行摘要会列出本 fork 和两个上游实际使用的提交。
+要试用或复现特定组合，在 [Build Yab extension](https://github.com/zephyr-roc/BewlyCat/actions/workflows/build-yab.yml) 页面点 **Run workflow**，用 `upstream_ref` 指定 BewlyCat 版本，用 `safari_ref` 指定 Safari 适配版本。两者都接受分支、标签或提交 SHA。首次发布的新组合如果来自手动构建，会标为预发布版。
 
 两个上游的合并只发生在构建环境中。要把 BewlyCat 主线更新写入本 fork 的 `main`，可在仓库首页选择 **Sync fork → Update branch**。如果你再次 fork 本仓库，请在自己的 **Actions** 页面启用工作流。
 

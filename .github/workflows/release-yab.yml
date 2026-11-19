@@ -1,0 +1,107 @@
+name: Publish Yab release
+
+on:
+  workflow_run:
+    workflows: [Build Yab extension]
+    types: [completed]
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-yab.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: release-yab-${{ github.event.workflow_run.head_sha || github.event.before }}
+      queue: max
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Find the installable ZIP
+        id: source
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PREVIOUS_SHA: ${{ github.event.before }}
+        run: |
+          if [[ -z "$RUN_ID" ]]; then
+            # Installing or updating the publisher also picks up the preceding main build.
+            RUN_ID=$(gh api --method GET "repos/$GH_REPO/actions/workflows/build-yab.yml/runs" \
+              -f head_sha="$PREVIOUS_SHA" -f branch=main -f event=push -f status=success -F per_page=1 \
+              --jq '.workflow_runs[0].id // empty')
+          fi
+          if [[ -z "$RUN_ID" ]]; then exit 0; fi
+          artifact=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq 'first(.artifacts[] | select((.expired | not) and (.name | startswith("BewlyCat-Yab-")))) // empty')
+          # A scheduled check has no artifact of its own when it reuses an existing ZIP.
+          if [[ -z "$artifact" ]]; then exit 0; fi
+          name=$(jq -r .name <<< "$artifact")
+          pattern='^BewlyCat-Yab-([0-9][0-9a-zA-Z.+-]*)-([0-9a-f]{12})-([0-9a-f]{12})-([0-9a-f]{12})\.zip$'
+          [[ "$name" =~ $pattern ]]
+          version=${BASH_REMATCH[1]} fork=${BASH_REMATCH[2]} upstream=${BASH_REMATCH[3]} safari=${BASH_REMATCH[4]}
+          head=$(jq -r .workflow_run.head_sha <<< "$artifact")
+          [[ "${head:0:12}" == "$fork" ]]
+          tag="yab-v$version-$fork-$upstream-$safari"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "target=$head"
+            echo "artifact_id=$(jq -r .id <<< "$artifact")"
+            echo "digest=$(jq -r .digest <<< "$artifact")"
+          } >> "$GITHUB_OUTPUT"
+          {
+            printf '适用于 Yab WebKit。下载并解压 **BewlyCat-Yab.zip**，在 Yab 中打开 **⌘E → Load Unpacked…**，选择包含 `manifest.json` 的目录。\n\n'
+            printf -- '- [本 fork @ %s](%s/%s/commit/%s)\n' "$fork" "$GITHUB_SERVER_URL" "$GH_REPO" "$head"
+            printf -- '- [BewlyCat @ %s](%s/keleus/BewlyCat/commit/%s)\n' "$upstream" "$GITHUB_SERVER_URL" "$upstream"
+            printf -- '- [BewlyCat-Safari @ %s](%s/shiinayane/BewlyCat-Safari/commit/%s)\n' "$safari" "$GITHUB_SERVER_URL" "$safari"
+            printf -- '- [GitHub Actions 构建](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GH_REPO" "$RUN_ID"
+          } > "$RUNNER_TEMP/release.md"
+
+      - name: Publish the verified ZIP
+        if: steps.source.outputs.tag != ''
+        env:
+          TAG: ${{ steps.source.outputs.tag }}
+          VERSION: ${{ steps.source.outputs.version }}
+          TARGET: ${{ steps.source.outputs.target }}
+          ARTIFACT_ID: ${{ steps.source.outputs.artifact_id }}
+          DIGEST: ${{ steps.source.outputs.digest }}
+          PREVIEW: ${{ github.event_name == 'workflow_run' && (github.event.workflow_run.head_branch != github.event.repository.default_branch || github.event.workflow_run.event == 'workflow_dispatch') }}
+        run: |
+          asset=BewlyCat-Yab.zip
+          release=$(gh release view "$TAG" --json isDraft,isPrerelease,assets 2>"$RUNNER_TEMP/lookup-error") || {
+            if ! grep -qiE 'release not found|HTTP 404' "$RUNNER_TEMP/lookup-error"; then
+              cat "$RUNNER_TEMP/lookup-error" >&2
+              exit 1
+            fi
+          }
+          if [[ -z "$release" ]] || ! jq -e --arg asset "$asset" 'any(.assets[]?; .name == $asset and .state == "uploaded")' <<< "$release" >/dev/null; then
+            gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > "$asset"
+            [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s  %s\n' "${DIGEST#sha256:}" "$asset" | sha256sum --check -
+            if [[ -n "$release" ]]; then
+              gh release upload "$TAG" "$asset" --clobber
+            else
+              flags=(--latest)
+              if [[ "$PREVIEW" == true ]]; then flags=(--prerelease --latest=false); fi
+              gh release create "$TAG" "$asset" --target "$TARGET" --title "BewlyCat $VERSION · Yab WebKit" \
+                --notes-file "$RUNNER_TEMP/release.md" "${flags[@]}"
+            fi
+          fi
+          if [[ -n "$release" ]]; then
+            if [[ "$PREVIEW" == false ]] && jq -e '.isDraft or .isPrerelease' <<< "$release" >/dev/null; then
+              gh release edit "$TAG" --draft=false --prerelease=false --latest
+            elif jq -e .isDraft <<< "$release" >/dev/null; then
+              gh release edit "$TAG" --draft=false
+            fi
+          fi
+          printf '[下载 Yab WebKit 扩展](%s/%s/releases/download/%s/%s)\n' "$GITHUB_SERVER_URL" "$GH_REPO" "$TAG" "$asset" >> "$GITHUB_STEP_SUMMARY"
