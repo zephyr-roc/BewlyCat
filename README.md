@@ -23,10 +23,10 @@ GitHub Actions 每 6 小时检查一次 `keleus/BewlyCat@main` 和 `shiinayane/B
 <details>
 <summary>构建细节与手动同步</summary>
 
-- **自动构建**　向本仓库的 `main`、`safari`、`safari-integration` 分支或 `v*` 标签推送也会触发构建。定时检查发现本仓库和两个上游的提交均与现有可下载产物一致时，会复用该 ZIP。
-- **WebKit 适配**　打包时会去掉内容脚本路径开头的 `./`，让 Yab 能正确加载界面脚本。
-- **指定版本**　在 [Build Yab extension](https://github.com/zephyr-roc/BewlyCat/actions/workflows/build-yab.yml) 中点击 **Run workflow**。用 `upstream_ref` 和 `safari_ref` 分别指定两个上游的分支、标签或提交 SHA。手动构建首次发布的组合会标为预发布版。
-- **同步 Fork**　工作流在构建环境中合并两个上游。要将 BewlyCat 主线更新合入本仓库的 `main`，可在仓库首页点击 **Sync fork → Update branch**。再次 Fork 本仓库后，请在自己的 **Actions** 页面启用工作流。
+- **自动构建** 向本仓库的 `main`、`safari`、`safari-integration` 分支或 `v*` 标签推送也会触发构建。定时检查发现本仓库和两个上游的提交均与现有可下载产物一致时，会复用该 ZIP。
+- **WebKit 适配** 打包时会去掉内容脚本路径开头的 `./`，让 Yab 能正确加载界面脚本。
+- **指定版本** 在 [Build Yab extension](https://github.com/zephyr-roc/BewlyCat/actions/workflows/build-yab.yml) 中点击 **Run workflow**。用 `upstream_ref` 和 `safari_ref` 分别指定两个上游的分支、标签或提交 SHA。手动构建首次发布的组合会标为预发布版。
+- **同步 Fork** 工作流在构建环境中合并两个上游。要将 BewlyCat 主线更新合入本仓库的 `main`，可在仓库首页点击 **Sync fork → Update branch**。再次 Fork 本仓库后，请在自己的 **Actions** 页面启用工作流。
 
 </details>
 
