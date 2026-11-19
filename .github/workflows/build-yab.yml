@@ -5,6 +5,15 @@ on:
     branches: [main, safari, safari-integration]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: BewlyCat 上游分支、标签或提交。留空使用当前仓库的代码
+        type: string
+        default: main
+      safari_ref:
+        description: BewlyCat-Safari 上游分支、标签或提交
+        type: string
+        default: safari
 
 permissions:
   contents: read
@@ -19,15 +28,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Include the pinned Safari port
+      - name: Integrate upstream sources for this build
         env:
-          SAFARI_COMMIT: 0fb259a807d66b2f6f491166c1c2218abfa2330f
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          SAFARI_REF: ${{ inputs.safari_ref || 'safari' }}
         run: |
-          if ! git cat-file -e "$SAFARI_COMMIT^{commit}" 2>/dev/null; then
-            git fetch --no-tags https://github.com/shiinayane/BewlyCat-Safari.git "$SAFARI_COMMIT"
+          git config user.name "Yab build"
+          git config user.email "ci@localhost"
+          merge_source() {
+            local repo=$1 ref=$2 sha
+            git check-ref-format "refs/build-input/$ref"
+            git fetch --no-tags -- "https://github.com/$repo.git" "$ref"
+            sha=$(git rev-parse --verify 'FETCH_HEAD^{commit}')
+            git merge --no-edit "$sha"
+            printf -- '- [%s @ %s](https://github.com/%s/commit/%s)\n' "$repo" "${sha:0:7}" "$repo" "$sha" >> "$GITHUB_STEP_SUMMARY"
+          }
+          printf -- '- [%s @ %s](%s/%s/commit/%s)\n' "$GITHUB_REPOSITORY" "${GITHUB_SHA:0:7}" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$UPSTREAM_REF" ]]; then
+            merge_source keleus/BewlyCat "$UPSTREAM_REF"
           fi
-          # Temporary merge for branches that do not yet contain the Safari port.
-          git -c user.name=CI -c user.email=ci@localhost merge --no-commit --no-ff "$SAFARI_COMMIT"
+          merge_source shiinayane/BewlyCat-Safari "$SAFARI_REF"
 
       - uses: actions/setup-node@v7
         with:
@@ -36,7 +56,7 @@ jobs:
       - uses: pnpm/action-setup@v6
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run
+      - run: pnpm run test --run
       - run: pnpm build-safari
 
       - name: Package the WebKit extension for Yab
@@ -66,8 +86,8 @@ jobs:
 
           manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           version = manifest["version"]
-          revision = os.environ["GITHUB_SHA"][:7]
-          output = Path(os.environ["RUNNER_TEMP"]) / f"BewlyCat-Yab-{version}-{revision}.zip"
+          run = os.environ["GITHUB_RUN_NUMBER"]
+          output = Path(os.environ["RUNNER_TEMP"]) / f"BewlyCat-Yab-{version}-r{run}.zip"
           with ZipFile(output, "w", ZIP_DEFLATED) as archive:
               for path in sorted(Path(".").rglob("*")):
                   if path.is_file():
