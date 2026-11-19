@@ -25,6 +25,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      zip: ${{ steps.package.outputs.path && steps.sources.outputs.zip }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,7 +65,7 @@ jobs:
         run: |
           artifact=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$ZIP_NAME" \
             --jq 'first(.artifacts[] | select(.expired == false) | "\(.workflow_run.id)/artifacts/\(.id)") // empty')
-          if [[ -n "$artifact" ]]; then
+          if [[ -n "$artifact" ]] && [[ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${artifact%%/*}" --jq .conclusion)" == success ]]; then
             echo 'found=true' >> "$GITHUB_OUTPUT"
             printf '\n[下载已有的 Yab 扩展包](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$artifact" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -101,15 +103,25 @@ jobs:
           if "safari" not in manifest.get("browser_specific_settings", {}):
               raise SystemExit("Expected a Safari Web Extension manifest")
 
-          # Yab may use these strings as resource patterns. './dist/...' fails
-          # to match the resolved 'dist/...' URL when its loader fetches a script.
+          def packaged_script(name):
+              path = Path(name)
+              if path.is_absolute() or ".." in path.parts or not path.is_file():
+                  raise SystemExit(f"Invalid packaged script: {name}")
+              return path.as_posix()
+
+          # Keep manifest paths equal to the URL paths Yab resolves.
           for entry in manifest["content_scripts"]:
               if "js" in entry:
-                  scripts = [Path(name) for name in entry["js"]]
-                  for script in scripts:
-                      if script.is_absolute() or ".." in script.parts or not script.is_file():
-                          raise SystemExit(f"Invalid packaged content script: {script}")
-                  entry["js"] = [script.as_posix() for script in scripts]
+                  entry["js"] = [packaged_script(name) for name in entry["js"]]
+
+          # The Safari build has a single bundled background entry. Yab can run
+          # it as an MV3 worker, with an event page on document-only hosts.
+          background = manifest["background"]
+          scripts = [packaged_script(name) for name in background["scripts"]]
+          if len(scripts) != 1:
+              raise SystemExit("Expected a single bundled Safari background script")
+          background.update(scripts=scripts, service_worker=scripts[0], type="module",
+                            preferred_environment=["service_worker", "document"])
 
           manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           output = Path(os.environ["RUNNER_TEMP"]) / os.environ["ZIP_NAME"]
@@ -129,3 +141,26 @@ jobs:
           path: ${{ steps.package.outputs.path }}
           archive: false
           if-no-files-found: error
+
+  webkit:
+    needs: build
+    if: needs.build.outputs.zip != ''
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.zip }}
+          path: ${{ runner.temp }}/yab-archive
+          skip-decompress: true
+
+      - name: Check background messaging in macOS WebKit
+        env:
+          ZIP_NAME: ${{ needs.build.outputs.zip }}
+        run: |
+          unzip -q "$RUNNER_TEMP/yab-archive/$ZIP_NAME" -d "$RUNNER_TEMP/yab-extension"
+          xcrun swift .github/scripts/check-yab-background.swift "$RUNNER_TEMP/yab-extension"

@@ -68,7 +68,7 @@ export async function sendMessage<T = any, R = any>(type: string, data?: T): Pro
   }
 
   if (isBackgroundDisconnectedError(lastError))
-    promptPageRefreshFromContentScript('background-unreachable', TRANSIENT_BACKGROUND_MESSAGE_ATTEMPTS)
+    promptPageRefreshFromContentScript('background-unreachable', TRANSIENT_BACKGROUND_MESSAGE_ATTEMPTS, undefined, { transport: 'sendMessage', messageType: type })
 
   throw lastError
 }
@@ -89,7 +89,7 @@ export async function sendAbortableApiMessage(type: string, data: unknown, signa
       if (!isBackgroundDisconnectedError(error))
         throw error
       if (attempt === TRANSIENT_BACKGROUND_MESSAGE_ATTEMPTS - 1) {
-        promptPageRefreshFromContentScript('background-unreachable', TRANSIENT_BACKGROUND_MESSAGE_ATTEMPTS)
+        promptPageRefreshFromContentScript('background-unreachable', TRANSIENT_BACKGROUND_MESSAGE_ATTEMPTS, undefined, { transport: 'connect', messageType: type })
         throw error
       }
       await waitWithSignal(waitForRetry(BACKGROUND_RETRY_DELAYS_MS[attempt]), signal)

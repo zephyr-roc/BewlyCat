@@ -22,6 +22,7 @@ export interface RefreshPromptDiagnostic {
   source: 'background' | 'content-script'
   expected?: ContentScriptIdentity
   received?: ContentScriptIdentity
+  connection?: { transport: 'sendMessage' | 'connect', messageType: string }
   attempts?: number
   failure?: 'timeout' | 'receiver-missing' | 'invalid-response' | 'message-error'
   update?: RefreshPromptUpdate
@@ -799,6 +800,7 @@ export function showRefreshPrompt(...args: unknown[]): void {
       source: copy.diagnostic.source,
       attempts: copy.diagnostic.attempts,
       failure: copy.diagnostic.failure,
+      connection: copy.diagnostic.connection,
       update: copy.diagnostic.update,
       expected: copy.diagnostic.expected,
       received: copy.diagnostic.received,
@@ -875,6 +877,7 @@ function isPageScriptReason(reason: ContentScriptRefreshReason): boolean {
 }
 
 interface PendingRefreshPrompt {
+  connection?: RefreshPromptDiagnostic['connection']
   reason: ContentScriptRefreshReason
   attempts: number
   pageScript?: RunningPageScriptIdentity
@@ -912,6 +915,7 @@ export function promptPageRefreshFromContentScript(
   reason: ContentScriptRefreshReason,
   attempts: number,
   pageScript?: RunningPageScriptIdentity,
+  connection?: RefreshPromptDiagnostic['connection'],
 ): void {
   if (!canShowRefreshPrompt())
     return
@@ -921,6 +925,7 @@ export function promptPageRefreshFromContentScript(
       pendingRefreshPrompt.reason = reason
       pendingRefreshPrompt.attempts = attempts
       pendingRefreshPrompt.pageScript = pageScript
+      pendingRefreshPrompt.connection = connection
     }
     return
   }
@@ -932,7 +937,7 @@ export function promptPageRefreshFromContentScript(
   }
 
   const revision = backgroundRecoveryRevision
-  const request: PendingRefreshPrompt = { reason, attempts, pageScript }
+  const request: PendingRefreshPrompt = { reason, attempts, pageScript, connection }
   pendingRefreshPrompt = request
   void (async () => {
     try {
@@ -955,6 +960,7 @@ export function promptPageRefreshFromContentScript(
         reason: request.reason,
         source: 'content-script',
         attempts: request.attempts,
+        connection: request.connection,
         expected,
         pageScript: request.pageScript,
       })
