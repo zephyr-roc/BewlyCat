@@ -4,10 +4,12 @@ on:
   push:
     branches: [main, safari, safari-integration]
     tags: ['v*']
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: BewlyCat 上游分支、标签或提交。留空使用当前仓库的代码
+        description: BewlyCat 上游分支、标签或提交
         type: string
         default: main
       safari_ref:
@@ -17,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -29,38 +32,62 @@ jobs:
           persist-credentials: false
 
       - name: Integrate upstream sources for this build
+        id: sources
         env:
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref || 'main' }}
           SAFARI_REF: ${{ inputs.safari_ref || 'safari' }}
         run: |
           git config user.name "Yab build"
           git config user.email "ci@localhost"
+          revisions=("${GITHUB_SHA:0:12}")
           merge_source() {
             local repo=$1 ref=$2 sha
             git check-ref-format "refs/build-input/$ref"
             git fetch --no-tags -- "https://github.com/$repo.git" "$ref"
             sha=$(git rev-parse --verify 'FETCH_HEAD^{commit}')
             git merge --no-edit "$sha"
+            revisions+=("${sha:0:12}")
             printf -- '- [%s @ %s](https://github.com/%s/commit/%s)\n' "$repo" "${sha:0:7}" "$repo" "$sha" >> "$GITHUB_STEP_SUMMARY"
           }
           printf -- '- [%s @ %s](%s/%s/commit/%s)\n' "$GITHUB_REPOSITORY" "${GITHUB_SHA:0:7}" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-          if [[ -n "$UPSTREAM_REF" ]]; then
-            merge_source keleus/BewlyCat "$UPSTREAM_REF"
-          fi
+          merge_source keleus/BewlyCat "$UPSTREAM_REF"
           merge_source shiinayane/BewlyCat-Safari "$SAFARI_REF"
+          printf 'zip=BewlyCat-Yab-%s-%s-%s-%s.zip\n' "$(jq -r .version package.json)" "${revisions[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Find a published ZIP for these revisions
+        if: github.event_name == 'schedule'
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP_NAME: ${{ steps.sources.outputs.zip }}
+        run: |
+          artifact=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$ZIP_NAME" \
+            --jq 'first(.artifacts[] | select(.expired == false) | "\(.workflow_run.id)/artifacts/\(.id)") // empty')
+          if [[ -n "$artifact" ]]; then
+            echo 'found=true' >> "$GITHUB_OUTPUT"
+            printf '\n[下载已有的 Yab 扩展包](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$artifact" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: actions/setup-node@v7
+        if: steps.published.outputs.found != 'true'
         with:
           node-version: '24'
 
       - uses: pnpm/action-setup@v6
+        if: steps.published.outputs.found != 'true'
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run test --run
-      - run: pnpm build-safari
+      - name: Install, test and build
+        if: steps.published.outputs.found != 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run test --run
+          pnpm build-safari
 
       - name: Package the WebKit extension for Yab
         id: package
+        if: steps.published.outputs.found != 'true'
+        env:
+          ZIP_NAME: ${{ steps.sources.outputs.zip }}
         working-directory: extension-safari
         run: |
           python3 - <<'PY'
@@ -85,9 +112,7 @@ jobs:
                   entry["js"] = [script.as_posix() for script in scripts]
 
           manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-          version = manifest["version"]
-          run = os.environ["GITHUB_RUN_NUMBER"]
-          output = Path(os.environ["RUNNER_TEMP"]) / f"BewlyCat-Yab-{version}-r{run}.zip"
+          output = Path(os.environ["RUNNER_TEMP"]) / os.environ["ZIP_NAME"]
           with ZipFile(output, "w", ZIP_DEFLATED) as archive:
               for path in sorted(Path(".").rglob("*")):
                   if path.is_file():
@@ -98,6 +123,7 @@ jobs:
           PY
 
       - name: Upload installable ZIP
+        if: steps.published.outputs.found != 'true'
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.package.outputs.path }}

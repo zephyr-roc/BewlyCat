@@ -12,7 +12,25 @@
 
 <p align="center">只需对您的 Bilibili 主页进行一些小更改即可。</p>
 
-## 👋 介绍
+## 本 fork 的 Yab WebKit 版
+
+这个 fork 为 macOS 上使用 Yab WebKit 模式的用户提供可直接加载的扩展包。每次构建都会合入两个上游的代码。[keleus/BewlyCat](https://github.com/keleus/BewlyCat) 提供 B 站界面和功能更新，[shiinayane/BewlyCat-Safari](https://github.com/shiinayane/BewlyCat-Safari) 提供 Safari 适配。打包时会去掉内容脚本路径开头的 `./`，让 Yab 的 WebKit 加载器能正确读取界面脚本。
+
+### 在 Yab 中安装或更新
+
+1. 登录 GitHub，打开 [Build Yab extension](https://github.com/zephyr-roc/BewlyCat/actions/workflows/build-yab.yml)，选择最近一次成功运行。在 **Artifacts** 下载 `BewlyCat-Yab-*.zip`。如果定时检查复用了已有产物，运行摘要里会有下载链接。
+2. 解压 ZIP。在 Yab 中按 **⌘E → Load Unpacked…**，选择直接包含 `manifest.json` 的目录。
+3. 用 WebKit 打开 [B 站首页](https://www.bilibili.com/)，按 **⌘R** 刷新。更新时，将新包解压到原来的扩展目录，再到 **Settings → Extensions → BewlyCat** 点 **Reload**，然后刷新 B 站标签页。
+
+### 两个上游如何同步
+
+工作流每 6 小时检查一次 `keleus/BewlyCat@main` 和 `shiinayane/BewlyCat-Safari@safari`。任一上游有新提交，就会在下一次检查时重新打包。如果相同的 fork 和上游提交已有可下载的 ZIP，定时任务会复用它。向本仓库的 `main`、`safari`、`safari-integration` 分支或 `v*` 标签推送时，也会构建两个上游的当前版本。
+
+要试用或复现特定组合，在工作流页面点 **Run workflow**，用 `upstream_ref` 指定 BewlyCat 版本，用 `safari_ref` 指定 Safari 适配版本。两者都接受分支、标签或提交 SHA。运行摘要会列出本 fork 和两个上游实际使用的提交。
+
+两个上游的合并只发生在构建环境中。要把 BewlyCat 主线更新写入本 fork 的 `main`，可在仓库首页选择 **Sync fork → Update branch**。如果你再次 fork 本仓库，请在自己的 **Actions** 页面启用工作流。
+
+## 👋 上游 BewlyCat 项目介绍
 
 > [!IMPORTANT]
 > 本插件及Fork代码禁止以任何形式的客户端封装！！！插件的目的是仅优化B站官方网站的使用体验。
